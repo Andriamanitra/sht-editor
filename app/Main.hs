@@ -1,7 +1,9 @@
 module Main where
 import System.IO
+import System.Environment ( getArgs )
 import qualified System.Console.ANSI as Terminal
 import Data.Maybe (fromMaybe)
+import System.Exit ( exitFailure, exitSuccess )
 
 
 
@@ -13,6 +15,7 @@ type TerminalSize = (Int, Int)
 data Model = Model
     { title :: String
     , terminalSize :: TerminalSize
+    , currentFileName :: Maybe String
     , textBuffer :: [String]
     , cursorPos :: CursorPos
     }
@@ -81,7 +84,7 @@ update (Resize newSize) model =
 
 view :: Model -> IO ()
 view model = do
-    let Model title _tsize textBuffer (CursorPos curR curC) = model
+    let Model title _tsize _ textBuffer (CursorPos curR curC) = model
     let titleStyle = [ Terminal.SetColor Terminal.Background Terminal.Dull Terminal.Blue ]
     Terminal.clearScreen
 
@@ -101,6 +104,23 @@ view model = do
 
 
 --- MAIN
+
+data Args = Args
+    { fileName :: Maybe String
+    , textBuf :: [String] 
+    }
+
+parseArgs :: [String] -> IO Args
+parseArgs ("-h":_) = help >> exitSuccess
+parseArgs [] = pure $ Args Nothing [""]
+parseArgs [fname] = do
+    handle <- openFile fname ReadMode
+    contents <- hGetContents handle
+    pure $ Args (Just fname) (lines contents)
+parseArgs _ = help >> exitFailure
+
+help :: IO ()
+help = putStrLn "Usage: sht [-h] [FILE]"
 
 getMsg :: IO Msg
 getMsg = do
@@ -126,9 +146,11 @@ mainLoop model = do
 
 main :: IO ()
 main = do
+    args <- fmap parseArgs getArgs
+    Args fname textBuf <- args
     let title = "sht: scuffed haskell text editor"
     tsize <- fromMaybe (error "failed to read terminal size") <$> Terminal.getTerminalSize
-    let initialModel = Model title tsize [""] (CursorPos 0 0)
+    let initialModel = Model title tsize fname textBuf (CursorPos 0 0)
     hSetBuffering stdin NoBuffering
     hSetEcho stdin False
     mainLoop initialModel
