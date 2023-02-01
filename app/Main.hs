@@ -1,9 +1,21 @@
 module Main where
 import System.IO
+    ( BufferMode(NoBuffering),
+      hFlush,
+      stdout,
+      hSetBuffering,
+      stdin,
+      hSetEcho,
+      hIsReadable,
+      hGetContents,
+      openFile,
+      hReady,
+      IOMode(ReadWriteMode) )
 import System.Environment ( getArgs )
 import qualified System.Console.ANSI as Terminal
-import Data.Maybe (fromMaybe)
+import Data.Maybe ( fromMaybe )
 import System.Exit ( exitFailure, exitSuccess )
+import Data.Char ( isControl )
 
 
 
@@ -27,6 +39,7 @@ data Model = Model
 data Msg =
     AddStr Int Int String
     | TypeChar Char
+    | MoveCursorRelative CursorPos
     | Enter
     | Backspace
     | Resize TerminalSize
@@ -78,6 +91,20 @@ update Backspace model =
 update (Resize newSize) model =
     model { terminalSize = newSize }
 
+update (MoveCursorRelative (CursorPos dr dc)) model =
+    model { cursorPos = nextPos }
+    where
+        CursorPos currR currC = cursorPos model
+        tbuf = textBuffer model
+        numRows = length tbuf
+        nextR = min (numRows - 1) (currR + dr)
+        nextC = max 0 (currC + dc)
+        currRow = tbuf !! nextR
+        nextPos
+            | nextR < 0 = CursorPos 0 0
+            | otherwise = CursorPos nextR (min nextC $ length currRow)
+
+
 
 
 --- VIEW
@@ -114,22 +141,57 @@ parseArgs :: [String] -> IO Args
 parseArgs ("-h":_) = help >> exitSuccess
 parseArgs [] = pure $ Args Nothing [""]
 parseArgs [fname] = do
-    handle <- openFile fname ReadMode
-    contents <- hGetContents handle
-    pure $ Args (Just fname) (lines contents)
+    handle <- openFile fname ReadWriteMode
+    readable <- hIsReadable handle
+    if readable
+    then do
+        contents <- hGetContents handle
+        pure $ Args (Just fname) (lines contents)
+    else pure $ Args (Just fname) [""]
+
 parseArgs _ = help >> exitFailure
 
 help :: IO ()
 help = putStrLn "Usage: sht [-h] [FILE]"
 
-getMsg :: IO Msg
-getMsg = do
-    key <- getChar
+getKey :: IO [Char]
+getKey = reverse <$> getKey' ""
+    where
+        getKey' chars = do
+            char <- getChar
+            more <- hReady stdin
+            (if more then getKey' else return) (char:chars)
+
+data Op = OpMsg Msg | SaveFile
+
+getOp :: IO Op
+getOp = do
+    let sendMsg = pure . OpMsg
+    key <- getKey    
     case key of
-        '\ESC' -> error "key not implemented"
-        '\DEL' -> pure Backspace
-        '\n' -> pure Enter
-        ch -> pure $ TypeChar ch
+        -- Arrows
+        "\ESC[A" -> sendMsg $ MoveCursorRelative (CursorPos (-1) 0)
+        "\ESC[B" -> sendMsg $ MoveCursorRelative (CursorPos 1 0)
+        "\ESC[C" -> sendMsg $ MoveCursorRelative (CursorPos 0 1)
+        "\ESC[D" -> sendMsg $ MoveCursorRelative (CursorPos 0 (-1))
+        -- Home
+        "\ESC[H" -> sendMsg $ MoveCursorRelative (CursorPos 0 (-1337))
+        -- End
+        "\ESC[F" -> sendMsg $ MoveCursorRelative (CursorPos 0 1337)
+        -- PageUp
+        "\ESC[5~" -> sendMsg $ MoveCursorRelative (CursorPos (-40) 0)
+        -- PageDown
+        "\ESC[6~" -> sendMsg $ MoveCursorRelative (CursorPos 40 0)
+        "\ESC" -> resetScreen >> exitSuccess
+        "\DEL" -> sendMsg Backspace
+        "\n" -> sendMsg Enter
+        -- regular typing
+        [ch] | not $ isControl ch -> sendMsg $ TypeChar ch
+        -- Ctrl + q
+        "\DC1" -> resetScreen >> exitSuccess
+        -- Ctrl + s
+        "\DC3" -> pure SaveFile
+        x -> error $ "key " ++ show x ++ " is  not implemented yet"
 
 resetScreen :: IO ()
 resetScreen = do
@@ -137,12 +199,23 @@ resetScreen = do
     Terminal.clearScreen
     Terminal.setCursorPosition 0 0
 
+saveFile :: Model -> IO ()
+saveFile model =
+    case currentFileName model of
+        Just fname -> writeFile fname $ unlines $ textBuffer model
+        Nothing -> error "can't save: no file is open"
+
 mainLoop :: Model -> IO ()
 mainLoop model = do
     view model
-    msg <- getMsg
-    let updatedModel = update msg model
-    mainLoop updatedModel
+    msgOrOp <- getOp
+    case msgOrOp of
+        OpMsg msg -> do
+            let updatedModel = update msg model
+            mainLoop updatedModel
+        SaveFile -> do
+            saveFile model
+            mainLoop model
 
 main :: IO ()
 main = do
