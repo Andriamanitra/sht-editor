@@ -9,6 +9,7 @@ A terrible text editor, intended to be a project to learn a little bit more Hask
 * type in the file by pressing letter/number keys
 * erase characters by pressing backspace
 * erase entire line by pressing ctrl+k
+* indent / dedent (with spaces – literal '\t' characters are not supported) using tab/shift+tab
 * save a file with ctrl+s (there's no way to specify a different location than the one initially opened)
 
 

@@ -15,14 +15,24 @@ import System.Environment ( getArgs )
 import qualified System.Console.ANSI as Terminal
 import Data.Maybe ( fromMaybe )
 import System.Exit ( exitFailure, exitSuccess )
-import Data.Char ( isControl )
+import Data.Char ( isControl, isSpace )
 
+
+--- Utils & constants
 
 slice :: Int -> Int -> [a] -> [a]
 slice startingFrom width = take width . drop startingFrom
 
 preCurrAfter :: Int -> [a] -> ([a], a, [a])
 preCurrAfter idx arr = (take idx arr, arr !! idx, drop (idx + 1) arr)
+
+tabSize :: Int
+tabSize = 4
+
+topBarHeight :: Int
+topBarHeight = 1
+
+
 
 --- MODEL
 
@@ -48,6 +58,8 @@ data Msg =
     | Enter
     | Backspace
     | CutLine
+    | Indent
+    | Dedent
     | Resize TerminalSize
 
 update :: Msg -> Model -> Model
@@ -66,15 +78,17 @@ update (AddStr r c txt) model =
             (x:xs) -> pre ++ [take c x ++ txt ++ drop c x] ++ xs
 
 update Enter model =
-    model { cursorPos = CursorPos (curR + 1) 0, textBuffer = updatedTextBuffer }
+    model { cursorPos = updatedCursorPos, textBuffer = updatedTextBuffer }
     where 
         CursorPos curR curC = cursorPos model
         tbuf = textBuffer model
         (pre, currentLine, after) = preCurrAfter curR tbuf
         (lineBeforeCursor, lineAfterCursor) = splitAt curC currentLine
+        indent = takeWhile isSpace currentLine
+        updatedCursorPos = CursorPos (curR + 1) (length indent)
         updatedTextBuffer
-          | curC < length currentLine = pre ++ [lineBeforeCursor, lineAfterCursor] ++ after
-          | otherwise = pre ++ [currentLine, ""] ++ after
+          | curC < length currentLine = pre ++ [lineBeforeCursor, indent ++ lineAfterCursor] ++ after
+          | otherwise = pre ++ [currentLine, indent] ++ after
 
 
 update Backspace model =
@@ -124,13 +138,27 @@ update CutLine model = model { cursorPos = CursorPos currR 0, textBuffer = updat
             case tbuf of
                 [_] -> [""]
                 _ -> pre ++ after
+update Indent model = model { cursorPos = updatedCursorPos, textBuffer = updatedTextBuffer }
+    where
+        CursorPos currR currC = cursorPos model
+        indent = replicate tabSize ' '
+        updatedCursorPos = CursorPos currR $ currC + length indent
+        tbuf = textBuffer model
+        (pre, currentLine, after) = preCurrAfter currR tbuf
+        updatedTextBuffer = pre ++ [indent ++ currentLine] ++ after
+
+update Dedent model = model { cursorPos = updatedCursorPos, textBuffer = updatedTextBuffer }
+    where
+        CursorPos currR currC = cursorPos model
+        updatedCursorPos = CursorPos currR $ currC - dedentSize
+        dedentSize = length $ takeWhile isSpace $ take tabSize currentLine
+        tbuf = textBuffer model
+        (pre, currentLine, after) = preCurrAfter currR tbuf
+        updatedTextBuffer = pre ++ [drop dedentSize currentLine] ++ after
 
 
 
 --- VIEW
-
-topBarHeight :: Int
-topBarHeight = 1
 
 getViewPort :: Model -> (Int, Int)
 getViewPort model = (viewR, viewC)
@@ -220,6 +248,9 @@ getOp = do
         "\n" -> sendMsg Enter
         -- regular typing
         [ch] | not $ isControl ch -> sendMsg $ TypeChar ch
+        -- indent / dedent with tab / shift+tab
+        "\t" -> sendMsg Indent
+        "\ESC[Z" -> sendMsg Dedent
         -- Ctrl + k
         "\v" -> sendMsg CutLine
         -- Ctrl + q
