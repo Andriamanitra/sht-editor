@@ -8,6 +8,7 @@ A terrible text editor, intended to be a project to learn a little bit more Hask
 * move around the file with arrows / Home / End / PageUp / PageDown
 * type in the file by pressing letter/number keys
 * erase characters by pressing backspace
+* erase entire line by pressing ctrl+k
 * save a file with ctrl+s (there's no way to specify a different location than the one initially opened)
 
 

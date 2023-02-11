@@ -47,6 +47,7 @@ data Msg =
     | MoveCursorRelative CursorPos
     | Enter
     | Backspace
+    | CutLine
     | Resize TerminalSize
 
 update :: Msg -> Model -> Model
@@ -114,6 +115,15 @@ update (MoveCursorRelative (CursorPos dr dc)) model =
             | nextR < 0 = CursorPos 0 0
             | otherwise = CursorPos nextR (min nextC $ length currRow)
 
+update CutLine model = model { cursorPos = CursorPos currR 0, textBuffer = updatedTextBuffer }
+    where
+        CursorPos currR _ = cursorPos model
+        tbuf = textBuffer model
+        (pre, _cutLine, after) = preCurrAfter currR tbuf
+        updatedTextBuffer =
+            case tbuf of
+                [_] -> [""]
+                _ -> pre ++ after
 
 
 
@@ -210,6 +220,8 @@ getOp = do
         "\n" -> sendMsg Enter
         -- regular typing
         [ch] | not $ isControl ch -> sendMsg $ TypeChar ch
+        -- Ctrl + k
+        "\v" -> sendMsg CutLine
         -- Ctrl + q
         "\DC1" -> resetScreen >> exitSuccess
         -- Ctrl + s
