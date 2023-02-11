@@ -21,6 +21,8 @@ import Data.Char ( isControl )
 slice :: Int -> Int -> [a] -> [a]
 slice startingFrom width = take width . drop startingFrom
 
+preCurrAfter :: Int -> [a] -> ([a], a, [a])
+preCurrAfter idx arr = (take idx arr, arr !! idx, drop (idx + 1) arr)
 
 --- MODEL
 
@@ -65,9 +67,14 @@ update (AddStr r c txt) model =
 update Enter model =
     model { cursorPos = CursorPos (curR + 1) 0, textBuffer = updatedTextBuffer }
     where 
-        CursorPos curR _curC = cursorPos model
-        (pre, after) = splitAt (curR + 1) (textBuffer model)
-        updatedTextBuffer = pre ++ [""] ++ after
+        CursorPos curR curC = cursorPos model
+        tbuf = textBuffer model
+        (pre, currentLine, after) = preCurrAfter curR tbuf
+        (lineBeforeCursor, lineAfterCursor) = splitAt curC currentLine
+        updatedTextBuffer
+          | curC < length currentLine = pre ++ [lineBeforeCursor, lineAfterCursor] ++ after
+          | otherwise = pre ++ [currentLine, ""] ++ after
+
 
 update Backspace model =
     if curR == 0 && curC == 0
