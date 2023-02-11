@@ -18,6 +18,9 @@ import System.Exit ( exitFailure, exitSuccess )
 import Data.Char ( isControl )
 
 
+slice :: Int -> Int -> [a] -> [a]
+slice startingFrom width = take width . drop startingFrom
+
 
 --- MODEL
 
@@ -109,9 +112,20 @@ update (MoveCursorRelative (CursorPos dr dc)) model =
 
 --- VIEW
 
+topBarHeight :: Int
+topBarHeight = 1
+
+getViewPort :: Model -> (Int, Int)
+getViewPort model = (viewR, viewC)
+    where
+        (tsizeR, tsizeC) = terminalSize model
+        CursorPos currR currC = cursorPos model
+        viewR = max 0 $ currR - (tsizeR - topBarHeight) + 2
+        viewC = max 0 $ currC - tsizeC + 1
+
 view :: Model -> IO ()
 view model = do
-    let Model title _tsize _ textBuffer (CursorPos curR curC) = model
+    let Model title (tsizeR, tsizeC) _ textBuffer (CursorPos curR curC) = model
     let titleStyle = [ Terminal.SetColor Terminal.Background Terminal.Dull Terminal.Blue ]
     Terminal.clearScreen
 
@@ -121,11 +135,13 @@ view model = do
     Terminal.clearFromCursorToLineEnd
     putStr (' ':title)
 
-    Terminal.setCursorPosition 1 0
+    Terminal.setCursorPosition topBarHeight 0
     Terminal.setSGR [Terminal.Reset]
-    putStr $ unlines textBuffer
 
-    Terminal.setCursorPosition (curR + 1) curC
+    let (viewR, viewC) = getViewPort model
+    putStr $ unlines $ map (slice viewC tsizeC) $ slice viewR (tsizeR - topBarHeight - 1) textBuffer
+
+    Terminal.setCursorPosition (topBarHeight + curR - viewR) (curC - viewC)
     hFlush stdout
 
 

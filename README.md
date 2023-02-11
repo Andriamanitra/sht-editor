@@ -9,7 +9,6 @@ A terrible text editor, intended to be a project to learn a little bit more Hask
 * type in the file by pressing letter/number keys
 * erase characters by pressing backspace
 * save a file with ctrl+s (there's no way to specify a different location than the one initially opened)
-* everything gets bugged if you have lines that are longer than the terminal is wide
 
 
 ## Instructions
